@@ -1,0 +1,8 @@
+[submodule "upper"]
+	path = upper
+	url = git@github.com:rubensantibanezacosta/upeer-phone.git
+	branch = main
+[submodule "upper-desktop"]
+	path = upper-desktop
+	url = git@github.com:rubensantibanezacosta/upeer-desktop.git
+	branch = main
