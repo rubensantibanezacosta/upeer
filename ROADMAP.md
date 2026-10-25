@@ -22,9 +22,9 @@ Regla de cierre: una capacidad no se marca completada por funcionar en un solo c
 | B3 — Códec DHT estricto | Completada localmente | Implementado | Cerrada localmente |
 | B4 — Kademlia | Completada localmente | Implementado | Cerrada localmente |
 | B5 — Bootstrap, seeds y LAN | Completada localmente | Implementado | Cerrada localmente; prueba real en B9 |
-| B6 — Cuenta y dispositivos | Núcleo Go, Keystore, guarda de admisión, protocolo OOB en ambas direcciones y autorizador propio; faltan el runtime sin raíz, el SPK por dispositivo en la mensajería y la migración | Certificado, registro y revocación local; mensajería con identidad compartida salvo el CHAT directo con claves de dispositivo | **Bloqueante** |
+| B6 — Cuenta y dispositivos | Núcleo Go, Keystore, guarda de admisión, protocolo OOB en ambas direcciones, UI de vinculación y autorizador propio; **falta el runtime en modo dispositivo** (el nodo exige la raíz), el SPK por dispositivo en la mensajería y la migración | Certificado, registro y revocación local; `identityMode` `root`/`device` ya implementado; mensajería con identidad compartida salvo el CHAT directo con claves de dispositivo | **Bloqueante** (residuo: runtime sin raíz) |
 | B7 — Ubicación y roaming | Store/lookup iterativo, caché verificada, `DHT_UPDATE` bidireccional con certificado, registro Desktop, secuencia anti-reinstalación, vector de cuenta en JVM, prueba instrumentada en emulador y dispositivo, y admisión antes de cifrar | Bloques, registro, admisión pre-cifrado, revocación con epoch, CHAT directo, `DR_RESET`, `CHAT_UPDATE`, control/ediciones de grupo y `GROUP_MSG` por dispositivo; vault replicado, consultado y con buzón por dispositivo del destinatario en Desktop; sincronización multi-dispositivo de mensajes/eventos en curso | **En curso** |
-| B8 — Servicio `:yggdrasil` | Parcial; trabajador DHT ya integrado | No aplica | Pendiente de cierre móvil |
+| B8 — Servicio `:yggdrasil` | Implementado: `YggdrasilDhtRuntime` arrancado por el servicio, con bootstrap, mantenimiento, cambio de red, republicación de registro y ubicación, y estado por AIDL; faltan presupuesto de batería y matriz de pruebas | No aplica | Ya no bloquea a B9–B10 |
 | B9 — Interoperabilidad | No iniciada | No iniciada | Pendiente |
 | B10 — Multidispositivo | Enrolamiento OOB completo en ambos clientes: Android lo ejecuta con UI de vinculación, certificado en Keystore, escaneo QR con cámara y autorizador expuesto en el bridge | Buzón/vault por dispositivo, `SYNC_ENVELOPE` con Double Ratchet por dispositivo, `SYNC_HELLO`, historial inicial por chunks, replay de eventos, relay entre más de dos dispositivos con backlog, firma de origen del evento relayado, eventos de perfil/grupo y estados `pending`/`synced` por dispositivo y por mensaje en la UI; el enrolamiento sin raíz (identidad de dispositivo, protocolo OOB, registro y revocación) está implementado y expuesto por IPC/UI en Desktop con canal manual QR + código pegado y en Android con códigos pegados y escaneo QR de lo que muestra el escritorio; faltan el transporte real de B6 para la solicitud, el runtime móvil sin raíz, la sincronización multi-dispositivo en Android y la prueba Desktop↔móvil | En curso (enrolamiento hecho; sincronización pendiente) |
 | B11 — Transporte local sin internet | No iniciada | No aplicada | Pendiente: Bluetooth y LAN sin Yggdrasil, con descubrimiento propio y paquetes sin dirección IPv6 |
@@ -159,7 +159,7 @@ Estado: el relay, la firma de origen, los metadatos de perfil/grupo, los estados
 
 El paso 4 usa un canal manual porque B6 todavía no ofrece transporte real entre dispositivos; cuando exista, sustituye al pegado de códigos sin cambiar el protocolo. El canal QR no puede ser simétrico por hardware: el escritorio no tiene cámara, así que la solicitud del dispositivo nuevo se sigue copiando en las dos direcciones hasta que B6 transporte los mensajes.
 
-El paso 6 es lo que falta para que el emparejamiento sea completo: hoy un móvil solo se puede vincular a una cuenta cuyo autorizador es un escritorio. La prueba del paso 7 sigue bloqueada por la fase OOB de B6 para el transporte entre plataformas.
+El paso 6 es lo que falta para que el emparejamiento sea completo: hoy un móvil solo se puede vincular a una cuenta cuyo autorizador es un escritorio. El paso 7 (sincronizar historial y `pending`→`synced`) **cambia de sitio en el orden el 25/10/2026**: deja de ser el siguiente inmediato. Antes va el runtime en modo dispositivo, porque hoy el nodo móvil exige la raíz (`YggdrasilIdentity.set(secretKey)` y `current()` nulo sin ella) y sincronizar sobre una raíz compartida incumple el criterio de salida de B10; y en medio entra el vault, que no depende de esto. El orden completo está en «Orden de ejecución de la paridad móvil».
 
 ## B11: transporte local sin internet (Bluetooth y LAN)
 
@@ -302,20 +302,25 @@ El port se ha medido por «qué tiene el móvil» y no por «qué entienden ambo
 
 Nada de esto invalida lo hecho, pero «mensajería cerrada» solo es cierto dentro de cada plataforma.
 
+## Orden de ejecución de la paridad móvil (25/10/2026)
+
+Decidido por bloqueos verificados en código, no por cercanía del módulo. Sustituye al orden anterior, que colocaba `SYNC_*` antes del vault y daba el vault por dependiente de la sincronización.
+
 | Orden | Trabajo móvil | Prerrequisito | Motivo |
 |---|---|---|---|
 | 1 | ~~**Unificar el número de seguridad**~~ — **hecho**: `computeSafetyNumber` en escritorio con los mismos vectores que `SafetyNumberTest`, IPC `get-contact-security` y la vista de Cifrado mostrándolo | Ninguno | Era el único fallo con impacto de seguridad |
-| 2 | **Verificación cruzada real** de reacciones, borrado, tarjetas, respuestas, reenvíos, reintentos, recibos, presencia y escritura — revisión estática de conformidad **hecha** (ver nota), falta la prueba con los dos clientes conectados | Sesión con ambos clientes | Barato en código y valida semanas de trabajo portado |
+| 2 | **Verificación cruzada real** de reacciones, borrado, tarjetas, respuestas, reenvíos, reintentos, recibos, presencia y escritura — **hecha el 25/10/2026** con los dos clientes conectados (9 de 9 en verde) | Sesión con ambos clientes | Barato en código y valida semanas de trabajo portado |
 | 3 | ~~**Escáner de QR en escritorio**~~ — **hecho**: `QrScannerModal` con `getUserMedia` + `jsQR`, `parseContactQrPayload` y botón en `AddContactModal`; falta probarlo con cámara física | Paso 2 | Hoy el QR del móvil no tiene quien lo lea |
-| 4 | `SYNC_*` con los nueve `SYNC_EVENT_KINDS` más `CONTACT_PROFILE`, relay y backlog | Pasos 2 y 3 | Cierra B10 en Android |
-| 5 | `FILE_*` con picker, chunked, hash y progreso | Paso 4 | Prerrequisito de las notas de voz y de la paridad simétrica |
-| 6 | `GROUP_*` con sender keys y control de admin | Pasos 4 y 5 | Fanout y archivos de grupo |
-| 7 | `CALL_*`: señalización, luego media UDP, después vídeo y grupo | Pasos 5 y 6 | Es el bloque más grande y el único con requisitos de hardware |
-| 8 | `VAULT_*` y entrega diferida | Paso 4 | Depende del buzón por dispositivo |
-| 9 | Cierre de UI: ajustes reales, preferencias de notificación y revocación de dispositivos | Pasos 2 y 8 | Deja la app coherente con lo que ya funciona |
-| 10 | Blogs P2P (B12), solo con la mensajería cerrada | Pasos 1–9 | Es producto nuevo, no transporte |
+| **4** | **Runtime en modo dispositivo** (residuo de B6): arrancar el nodo con clave y certificado de dispositivo sin la raíz | Pasos 2 y 3 | **Bloqueo duro de B10.** `YggdrasilIdentity.set(secretKey)` exige la raíz y `current()` es `null` sin ella, así que hoy los dos dispositivos de la cuenta comparten raíz. Desktop ya tiene `identityMode` `root`/`device`. Sin este paso, B10 no puede cerrarse y el vault se diseñaría contra una identidad temporal |
+| **5** | **`VAULT_*` y entrega diferida** | Paso 4 | **No depende de `SYNC_*`** (corrección del 25/10/2026): el vault de escritorio solo usa Kademlia, contactos, reputación y `sendSecurePacket`. Las primitivas DHT ya están en el móvil. Es lo que elimina el `failed` permanente a los ~15 min y desbloquea el estado `vaulted` y el cierre de UI |
+| **6** | **`SYNC_*`** con los nueve `SYNC_EVENT_KINDS` más `CONTACT_PROFILE`, relay y backlog | Pasos 4 y 5 | Cierra B10. Las piezas puras ya están hechas y probadas; falta cablearlas al servicio |
+| 7 | `FILE_*` con picker, chunked, hash y progreso | Paso 5 | La recuperación offline de adjuntos usa los shards del vault; es además el prerrequisito real de las notas de voz |
+| 8 | `GROUP_*` con sender keys y control de admin | Pasos 4 y 7 | Fanout por dispositivo y adjuntos de grupo desde el primer día, como en escritorio |
+| 9 | `CALL_*`: señalización, luego media UDP, después vídeo y grupo | Paso 4 | La señalización va con claves de dispositivo; es el bloque más grande y el único con hardware de por medio |
+| 10 | Cierre de UI: ajustes reales, preferencias de notificación y revocación de dispositivos | Pasos 5 y 6 | Deja la app coherente con lo que ya funciona |
+| 11 | Blogs P2P (B12), solo con la mensajería cerrada | Pasos 1–10 | Es producto nuevo, no transporte |
 
-Los pasos 1–3 de la tabla anterior —eventos de mensaje, estados de entrega reales y su UI— ya están hechos dentro de cada plataforma y quedan absorbidos por el paso 2, que es donde se comprueban de verdad.
+Los pasos 1–3 de la tabla ya están hechos y quedan absorbidos por el paso 2, que es donde se comprueban de verdad. **B9 no es un paso sino una puerta**: la matriz de interoperabilidad, el fuzzing y el presupuesto de batería se ejecutan al cerrar cada paso sobre lo que ese paso toque, no al final. **B8 ya no bloquea nada**: el trabajador DHT está cableado en `:yggdrasil` (`YggdrasilDhtRuntime` arrancado por el servicio, con bootstrap, mantenimiento, cambio de red y republicación); lo que queda de B8 es presupuesto medido y matriz de pruebas.
 
 ## Reputación: de señal social a criterio técnico
 
@@ -325,8 +330,9 @@ Decisión del 24/10/2026. La reputación deja de ser un dato de producto y pasa 
 - **Uso interno.** El vouch score sigue alimentando lo que ya depende de él: dificultad de PoW, límite de renovaciones por confianza, elección de relay de llamadas, admisión de vault y rate limiting por identidad.
 - **Se recalcula por usuario, no por nodo.** Hoy `computeScore` puntúa una identidad y el resultado se lee como si describiera a la persona, aunque en realidad mide el nodo desde el que escribe. Un usuario con móvil y escritorio tiene dos nodos y, por tanto, dos puntuaciones que no significan lo mismo. Hay que agregar por cuenta: la confianza se gana o se pierde por persona, y los dispositivos de esa cuenta heredan el resultado. Eso obliga a decidir qué peso tiene cada dispositivo, cómo se agregan (mínimo, media, confianza por dispositivo verificado) y qué pasa cuando un dispositivo comprometido intenta arrastrar la cuenta.
 - **Trabajo abierto:** retirar la reputación de todas las vistas de ambos clientes salvo el aviso de reputación muy mala; definir el umbral de «muy mala» una sola vez y compartirlo; rediseñar `computeScore` para agregar por cuenta con los dispositivos verificados como unidad, con pruebas de que una cuenta con dos dispositivos no mejora ni empeora solo por tener más nodos; y actualizar el contrato de las pantallas que hoy reciben `vouchScore`.
+- **Consecuencia para el vault móvil (25/10/2026):** el `vouch score` no es solo una señal que se muestra; también decide cargas técnicas, y una de ellas es el factor de replicación del vault. `VaultManager.getDynamicReplicationFactor` de escritorio elige entre 3 y 12 custodios según el score y el tiempo conocido, con `8` de emergencia cuando la consulta falla. El móvil no tiene reputación, así que al portar `VAULT_*` hace falta un sustituto determinista —o el valor de emergencia fijo— y no un `vouchScore` inventado. Es también un argumento para no retirar `computeScore` antes de portar el vault.
 
-## Orden recomendado
+## Orden recomendado de B7
 
 | Orden | Trabajo | Responsable | Prerrequisito |
 |---|---|---|---|
