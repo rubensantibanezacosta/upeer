@@ -163,7 +163,21 @@ El paso 6 es lo que falta para que el emparejamiento sea completo: hoy un móvil
 
 ## B11: transporte local sin internet (Bluetooth y LAN)
 
-Estado: **no iniciado**. Hoy todo el transporte pasa por Yggdrasil (`Bridge.dialTCP`, `listenTCP`, `writeFrame`) y cada paquete firmado exige una `senderYggAddress` IPv6 válida; sin red no hay nodo, así que la app no puede hablar con el móvil de al lado. Briar sí: es su razón de ser en apagones y censura.
+> ### ⛔ Aviso: Bluetooth NO se implementa sin hablarlo antes
+>
+> **Decisión pendiente del usuario, no del agente.** El Bluetooth de esta fase queda **bloqueado a propósito**: no se escribe código, no se añaden permisos al manifiesto, no se toca el `build.gradle` ni se instalan dependencias hasta que el usuario lo apruebe explícitamente en una conversación sobre el diseño. La LAN local (misma subred) tampoco se empieza de rebote; se discute en el mismo bloque.
+>
+> Lo que hay que discutir **antes** de tocar nada:
+>
+> 1. **Alcance real.** ¿Se quiere el caso «sin internet, dos personas en la misma habitación», o solo el caso «mi móvil y mi escritorio sin red»? El primero exige descubrimiento entre desconocidos; el segundo no, y es mucho menos superficie de riesgo.
+> 2. **Qué transporte, en qué orden.** LAN primero (barata, sin permisos nuevos, reutiliza casi todo) y Bluetooth después, o Bluetooth primero por ser el escenario de apagón. Son dos trabajos de tamaño muy distinto.
+> 3. **El precio de la radio, aceptado o no.** El descubrimiento Bluetooth expone un identificador estable a cualquiera que escanee en el radio. ¿Se acepta ese límite, con nombre sin identidad y MAC rotada, o se descarta el modo visible y se exige intercambio de QR presencial?
+> 4. **Firma sin Yggdrasil.** El cambio de fondo es un campo de origen transport-agnóstico con dominio de firma propio. Toca `VerifySignedPacket` y la admisión de B7, es decir, trabajo ya cerrado y probado. ¿Se asume el riesgo de reabrirlo?
+> 5. **Batería y escaneo.** Escaneo por ventanas frente a continuo; qué presupuesto se considera aceptable y si el modo se activa solo a petición del usuario.
+>
+> Mientras esa conversación no ocurra, esto es documentación de diseño y nada más. Cualquier petición de implementar B11 debe responderse pidiendo esa conversación primero.
+
+Estado: **no iniciado y deliberadamente parado**. Hoy todo el transporte pasa por Yggdrasil (`Bridge.dialTCP`, `listenTCP`, `writeFrame`) y cada paquete firmado exige una `senderYggAddress` IPv6 válida; sin red no hay nodo, así que la app no puede hablar con el móvil de al lado. Briar sí: es su razón de ser en apagones y censura.
 
 ### Qué hace Briar, y qué se puede copiar
 
@@ -337,7 +351,7 @@ Decisión del 24/10/2026. La reputación deja de ser un dato de producto y pasa 
 | Custodia de la raíz en varios dispositivos | Revocación no efectiva | Raíz solo en dispositivo de emparejamiento; no copiar mnemonic/SPK |
 | Store no iterativo | Ubicación no alcanza nodos nuevos o queda obsoleta | Resuelto en Android con `FIND_NODE`, ACK, reintento y poda; Desktop conserva el store legacy |
 | Caché local de ubicación | Dirección antigua tras cambio de red | Lookup remoto forzado para registro/ubicación; no usar caché sin TTL |
-| Bluetooth expone la MAC al escanear | Correlación de presencia y de relaciones aunque el contenido vaya cifrado | Nombre sin identidad, relleno constante, identidad solo tras el handshake y MAC rotada por el usuario; documentar el límite |
+| Bluetooth expone la MAC al escanear | Correlación de presencia y de relaciones aunque el contenido vaya cifrado | Nombre sin identidad, relleno constante, identidad solo tras el handshake y MAC rotada por el usuario; documentar el límite. **Riesgo sin aceptar: forma parte de la conversación previa a implementar B11** |
 | Paquetes firmados atados a dirección IPv6 | Sin Yggdrasil no se puede firmar ni verificar, así que el transporte local no arranca | Campo de origen transport-agnóstico con dominio de firma propio y vector cruzado, sin relajar la validación actual |
 | Escaneo Bluetooth continuo | Consumo de batería y rastreo pasivo | Escaneo por ventanas acotadas, cancelación al cerrar y presupuesto medido antes de activarlo por defecto |
 | Blog: reenvío sin firma de autor | Un contacto podría atribuirse un post ajeno al recompartirlo | Firma de contenido del autor dentro del post, `contentId` por hash y verificación en el receptor antes de mostrar |
